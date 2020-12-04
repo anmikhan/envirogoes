@@ -49,7 +49,7 @@ zenith_calc <- function  (LAT,LON,DOY,Hr){
 
 #--------------------------------------------------------------------------------------------- 
 #Read in data from goes
-fires <- fread('/Users/badgrs/data/fire/califires2019_goes_cmi2km_mar2019_march2020_cmask.csv')
+fires <- fread('califires2019_goes_cmi2km_mar2019_march2020_cmask.csv')
 
 #convert stimestamp to utc POSIXct datatype
 fires$stimestamp_utc = as.POSIXct(fires$stimestamp, 
@@ -86,7 +86,6 @@ kin = fires[fire == 'Kincade' & cloud == 0]
 #Calculate NDVI and NDII
 kin[, NDVI := (CMI_C03 - CMI_C02) / (CMI_C03 + CMI_C02)]
 kin[, NDII_5 := (CMI_C03 - CMI_C05) / (CMI_C03 + CMI_C05)]
-kin[, NDII_6 := (CMI_C03 - CMI_C06) / (CMI_C03 + CMI_C06)]
 
 kin_day = kin[sza < 70]
 
@@ -94,14 +93,12 @@ kin_day = kin[sza < 70]
 in_mean_ndvi = kin_day[inside_perim == T, 
                       list(mean_NDVI = mean(NDVI),
                            mean_NDII5 = mean(NDII_5),
-                           mean_NDII6 = mean(NDII_6),
                            stimestamp_ldt, 
                            stimestamp_utc), 
                       by = date_ldt]
 out_mean_ndvi = kin_day[inside_perim == F, 
                         list(mean_NDVI = mean(NDVI), 
                              mean_NDII5 = mean(NDII_5),
-                             mean_NDII6 = mean(NDII_6),
                              stimestamp_ldt, 
                              stimestamp_utc), 
                        by = date_ldt]
@@ -113,7 +110,6 @@ in_mednoon_ndvi = kin_day[inside_perim == T
                           & dec_hour_ldt < 14, 
                       list(median_NDVI = median(NDVI), 
                            median_NDII5 = median(NDII_5),
-                           median_NDII6 = median(NDII_6),
                            stimestamp_ldt, 
                            stimestamp_utc), 
                       by = date_ldt]
@@ -122,13 +118,12 @@ out_mednoon_ndvi = kin_day[inside_perim == F
                            & dec_hour_ldt < 14, 
                            list(median_NDVI = median(NDVI), 
                                 median_NDII5 = median(NDII_5),
-                                median_NDII6 = median(NDII_6),
                                 stimestamp_ldt, 
                                 stimestamp_utc),  
                        by = date_ldt]
 
 #Read in modis data at fire point
-fires.modis <- fread('/Users/badgrs/data/fire/califires2019_modis_l1b1km_mar2019_march2020.csv')
+fires.modis <- fread('califires2019_modis_l1b1km_mar2019_march2020.csv')
 
 #Calculate NDVI
 fires.modis [, NDVI := (band2 - band1) / (band2 + band1)]
@@ -239,7 +234,7 @@ axis.POSIXct(1,
 title ("Inside fire perimeter", col = 'gray')
 
 
-######-------Plot NDVI outside fire perimeter--------##########
+#-------Plot NDVI outside fire perimeter----------------
 ylims_out = c(min(kin_day[inside_perim == F]$NDVI, 
               fires.modis[Name == 'kincade_outfire']$NDVI, 
               na.rm = T), 
@@ -313,7 +308,7 @@ legend('bottomright',
        bty="n")
 
 
-#######-------Plot NDII inside fire perimeter--------##########
+#----------Plot NDII inside fire perimeter-----------
 par(mfrow = c(2, 1))
 ylims_out = c(min(kin_day$NDII_5, 
                   na.rm = T), 
@@ -375,7 +370,7 @@ legend('topright',
        #xpd=NA, 
        bty="n")
 
-#######-------Plot NDII outside of fire perimeter--------##########
+#---------Plot NDII outside of fire perimeter--------
 ylims_out = c(min(kin_day$NDII_5, 
                   na.rm = T), 
               max(kin_day$NDII_5, 
