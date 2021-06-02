@@ -49,7 +49,7 @@ zenith_calc <- function  (LAT,LON,DOY,Hr){
 
 #--------------------------------------------------------------------------------------------- 
 #Read in data from goes
-fires <- fread('califires2019_goes_cmi2km_mar2019_march2020_cmask.csv')
+fires <- fread('/Users/badgrs/data/fire/califires2019_goes_cmi2km_mar2019_march2020_cmask.csv')
 
 #convert stimestamp to utc POSIXct datatype
 fires$stimestamp_utc = as.POSIXct(fires$stimestamp, 
@@ -61,8 +61,8 @@ fires$stimestamp_ldt = format(fires$stimestamp_utc, tz = 'US/Pacific')
 fires$stimestamp_ldt = as.POSIXct(fires$stimestamp_ldt, tz = 'US/Pacific')
 
 #Get date as just day to calculate stats by day
-fires$date_utc = date(fires$stimestamp_utc)
-fires$date_ldt = date(fires$stimestamp_ldt)
+fires$date_utc = as.POSIXct(date(fires$stimestamp_utc))
+fires$date_ldt = as.POSIXct(date(fires$stimestamp_ldt))
 
 #Calculate decimal hour
 fires[, dec_hour_utc := (hour(stimestamp_utc) 
@@ -95,13 +95,13 @@ in_mean_ndvi = kin_day[inside_perim == T,
                            mean_NDII5 = mean(NDII_5),
                            stimestamp_ldt, 
                            stimestamp_utc), 
-                      by = date_ldt]
+                      by = date_utc]
 out_mean_ndvi = kin_day[inside_perim == F, 
                         list(mean_NDVI = mean(NDVI), 
                              mean_NDII5 = mean(NDII_5),
                              stimestamp_ldt, 
                              stimestamp_utc), 
-                       by = date_ldt]
+                       by = date_utc]
 
 
 #Calculate median NDVI,  NDII_5, NDII_6 surrounding noon hours
@@ -112,7 +112,7 @@ in_mednoon_ndvi = kin_day[inside_perim == T
                            median_NDII5 = median(NDII_5),
                            stimestamp_ldt, 
                            stimestamp_utc), 
-                      by = date_ldt]
+                      by = date_utc]
 out_mednoon_ndvi = kin_day[inside_perim == F 
                            & dec_hour_ldt > 10 
                            & dec_hour_ldt < 14, 
@@ -120,54 +120,37 @@ out_mednoon_ndvi = kin_day[inside_perim == F
                                 median_NDII5 = median(NDII_5),
                                 stimestamp_ldt, 
                                 stimestamp_utc),  
-                       by = date_ldt]
+                       by = date_utc]
 
 #Read in modis data at fire point
-fires.modis <- fread('califires2019_modis_l1b1km_mar2019_march2020.csv')
+#fires.modis <- fread('califires2019_modis_l1b1km_mar2019_march2020.csv') 
+fires.modis <- fread ('/Users/badgrs/data/fire/califires_modis_mcd43a4_2019_2020.csv', stringsAsFactors = F)
 
-#Calculate NDVI
-fires.modis [, NDVI := (band2 - band1) / (band2 + band1)]
+#Get good quality fire entries 
+fires.modis = fires.modis[Name %in% c('kincade_infire', 'kincade_outfire') & b1_qf == 0 & b2_qf == 0 & b6_qf == 0]
 
+#Convert date to string
+fires.modis$date_str = as.character(fires.modis$date)
 #convert stimestamp to utc POSIXct datatype
-fires.modis$timestamp_utc = as.POSIXct(fires.modis$timestamp, 
-                                       tz = 'UTC',
-                                       format="%Y-%m-%dT%H:%M:%OSZ")
+fires.modis$date_utc = as.POSIXct(fires.modis$date_str,
+                               tz = 'UTC',
+                               format="%Y%j"
+                               )
 
 #convert to pacific
-fires.modis$timestamp_ldt = format(fires.modis$timestamp_utc, 
+fires.modis$date_ldt = format(fires.modis$date_utc, 
                                    tz = 'US/Pacific')
-fires.modis$timestamp_ldt = as.POSIXct(fires.modis$timestamp_ldt, 
+fires.modis$date_ldt = as.POSIXct(fires.modis$date_utc, 
                                        tz = 'US/Pacific')
 
-#Get date as just day 
-fires.modis$date_utc = date(fires.modis$timestamp_utc)
-fires.modis$date_ldt = date(fires.modis$timestamp_ldt)
+#Get date 
+#fires.modis$date_utc = date(fires.modis$date_utc)
+#fires.modis$date_ldt = date(fires.modis$date_ldt)
 
-#Calculate decimal hour
-fires.modis[, dec_hour_utc := (hour(timestamp_utc) 
-                               + (minute(timestamp_utc) / 60) 
-                               + (second(timestamp_utc) / 3600))]
-fires.modis[, dec_hour_ldt := (hour(timestamp_ldt) 
-                               + (minute(timestamp_ldt) / 60) 
-                               + (second(timestamp_ldt) / 3600))]
+#Calculate NDVI
+fires.modis [, NDVI := (b2_ref - b1_ref) / (b2_ref + b1_ref)]
+fires.modis [, NDII := (b2_ref - b6_ref) / (b2_ref + b6_ref)]
 
-#Use cloud mask from goes data to cloud mask modis data
-fires.modis$cloud = 1 #Add column to be populated
-
-for (row in 1:nrow(fires.modis)){
-  mod_hour = fires.modis[row,]$dec_hour_ldt #Get modis local hour
-  mod_date_ldt = fires.modis[row,]$date_ldt #Get modis local date
-  gfire = fires[fire == 'Kincade' & inside_perim == T & date_ldt == mod_date_ldt] #get goes fire rows for modis date and hour
-  if (nrow(gfire) > 0){
-    gfire [,goes_mod_hr_diff := dec_hour_ldt - mod_hour] #Calculate difference between modis hour and all goes hours for the day
-    diff_index = which(abs(gfire$goes_mod_hr_diff) == min(abs(gfire$goes_mod_hr_diff)))
-    if (is.na(gfire [diff_index,]$cloud)){
-      fires.modis[row,]$cloud = NA
-    }else{
-      fires.modis[row,]$cloud = gfire [diff_index,]$cloud
-    }
-  }
-}
 
 #----------------------PLOT NDVI inside fire--------
 par(mfrow = c(2, 1))
@@ -181,57 +164,73 @@ ylims = c(min(kin_day[inside_perim == T]$NDVI,
 )
 
 #Set up plot
-plot(NDVI ~ stimestamp_ldt, 
+plot(NDVI ~ date_utc, 
      kin_day[inside_perim == T], 
      xlab = '', 
      xaxt = 'n',
-     ylab = 'TOA NDVI',
+     ylab = 'NDVI',
      ylim = ylims,
      pch = '',
      cex.axis = 1)
 
 #Shade fire dates
-x = c(min(kin_day[inside_perim == T & doy == 296]$stimestamp_ldt), 
-      min(kin_day[inside_perim == T & doy == 310]$stimestamp_ldt), 
-      min(kin_day[inside_perim == T & doy == 310]$stimestamp_ldt), 
-      min(kin_day[inside_perim == T & doy == 296]$stimestamp_ldt))
+x = c(min(kin_day[inside_perim == T & doy == 296]$date_utc), 
+      min(kin_day[inside_perim == T & doy == 310]$date_utc), 
+      min(kin_day[inside_perim == T & doy == 310]$date_utc), 
+      min(kin_day[inside_perim == T & doy == 296]$date_utc))
 y = c(-2, -2, 2, 2)
 polygon(x, y, col = 'gray88', border = 'gray88')
 
 #Add NDVI
-points(NDVI ~stimestamp_ldt,
+points(NDVI ~ date_utc,
        kin_day[inside_perim == T],
-       pch = 20, cex = 0.5, col = 'gray50')
+       pch = 20, cex = 0.8, col = 'gray50')
 
 #Add modis NDVI
-points(NDVI ~timestamp_ldt,
-       fires.modis[Name == 'kincade_infire' & cloud == 0],
-       pch = 20, cex = 0.7, col = 'red')
+points(NDVI ~ date_utc,
+       fires.modis[date_utc >= min(kin_day[inside_perim == T]$date_utc) 
+                   & date_utc <= max(kin_day[inside_perim == T]$date_utc) 
+                   & Name == 'kincade_infire'],
+       pch = 20, cex = 0.8, col = 'red')
 
 #Add GOES noon time median NDVI
-points(median_NDVI ~ stimestamp_ldt,
+points(median_NDVI ~ date_utc,
        in_mednoon_ndvi,
-       pch = 20, cex = 0.6, col = 'goldenrod2')
+       pch = 20, cex = 0.8, col = 'goldenrod2')
 
 #Add GOES mean NDVI
-points(mean_NDVI ~ stimestamp_ldt,
+points(mean_NDVI ~ date_utc,
        in_mean_ndvi,
        #pch = 5, 
-       cex = 0.5, col = 'purple')
+       cex = 0.8, col = 'purple')
 
 #Add x-axis
 date_seq = seq(
-  min(kin_day[inside_perim == T]$stimestamp_ldt), 
-  max(kin_day[inside_perim == T]$stimestamp_ldt), 
+  min(kin_day[inside_perim == T]$date_utc), 
+  max(kin_day[inside_perim == T]$date_utc), 
   by = 'week')
 
 axis.POSIXct(1, 
-             kin_day[inside_perim == T]$stimestamp_ldt, 
+             kin_day[inside_perim == T]$date_utc, 
              at = date_seq, 
              format = '%m-%d', 
              las = 3,
              cex = 0.8)
 title ("Inside fire perimeter", col = 'gray')
+
+#Add legend
+legend('topright',
+       legend=c("MODIS NBAR NDVI",
+                "GOES TOA NDVI",
+                "GOES median (local hours 10 - 14)", 
+                "GOES daily daytime mean",
+                "Fire duration"),
+       pch = c(20, 20, 20, 1, NA),
+       col=c("red", "gray50", "goldenrod2", "purple", NA),
+       border = c(NA, NA, NA, NA, NA),
+       fill = c(NA, NA, NA, NA, 'gray'),
+       ncol=1, 
+       bty="n")
 
 
 #-------Plot NDVI outside fire perimeter----------------
@@ -243,50 +242,52 @@ ylims_out = c(min(kin_day[inside_perim == F]$NDVI,
               na.rm = T)
 )
 
-plot(NDVI ~ stimestamp_ldt, 
+plot(NDVI ~ date_utc, 
      kin_day[inside_perim == F & NDVI > -1 & NDVI < 1], 
      xlab = '', 
-     ylab = 'TOA NDVI',
+     ylab = 'NDVI',
      ylim = ylims_out,
      pch = '',
      xaxt = 'n')
 
 #Shade fire dates
-x = c(min(kin_day[inside_perim == F & doy == 296]$stimestamp_ldt), 
-      min(kin_day[inside_perim == F & doy == 310]$stimestamp_ldt), 
-      min(kin_day[inside_perim == F & doy == 310]$stimestamp_ldt), 
-      min(kin_day[inside_perim == F & doy == 296]$stimestamp_ldt))
+x = c(min(kin_day[inside_perim == F & doy == 296]$date_utc), 
+      min(kin_day[inside_perim == F & doy == 310]$date_utc), 
+      min(kin_day[inside_perim == F & doy == 310]$date_utc), 
+      min(kin_day[inside_perim == F & doy == 296]$date_utc))
 y = c(-2, -2, 2, 2)
 polygon(x, y, col = 'gray88', border = 'gray88')
 
 #Add NDVI
-points(NDVI ~stimestamp_ldt,
+points(NDVI ~ date_utc,
        kin_day[inside_perim == F],
-       pch = 20, cex = 0.5, col = 'gray50')
+       pch = 20, cex = 0.8, col = 'gray50')
 
 #Add modis NDVI
-points(NDVI ~timestamp_ldt,
-       fires.modis[Name == 'kincade_outfire' & cloud == 0],
-       pch = 20, cex = 0.7, col = 'red')
+points(NDVI ~ date_utc,
+       fires.modis[date_utc >= min(kin_day[inside_perim == F]$date_utc) 
+                   & date_utc <= max(kin_day[inside_perim == F]$date_utc) 
+                   & Name == 'kincade_outfire'],
+       pch = 20, cex = 0.8, col = 'red')
 
 #Add median noon NDVI
-points(median_NDVI ~ stimestamp_ldt,
+points(median_NDVI ~ date_utc,
        out_mednoon_ndvi,
-       pch = 20, cex = 0.6, col = 'goldenrod2')
+       pch = 20, cex = 0.8, col = 'goldenrod2')
 
 #Add daily mean NDVI
-points(mean_NDVI ~ stimestamp_ldt,
+points(mean_NDVI ~ date_utc,
        out_mean_ndvi,
-       cex = 0.5, col = 'purple')
+       cex = 0.8, col = 'purple')
 
 #Add x-axis
 date_seq = seq(
-  min(kin_day[inside_perim == F]$stimestamp_ldt), 
-  max(kin_day[inside_perim == F]$stimestamp_ldt), 
+  min(kin_day[inside_perim == F]$date_utc), 
+  max(kin_day[inside_perim == F]$date_utc), 
   by = 'week')
 
 axis.POSIXct(1, 
-             kin_day[inside_perim == F]$stimestamp_ldt, 
+             kin_day[inside_perim == F]$date_utc, 
              at = date_seq, 
              format = '%m-%d', 
              las = 3)
@@ -295,7 +296,7 @@ title ('Outside fire perimeter', col = 'gray')
 
 #Add legend
 legend('bottomright',
-       legend=c("MODIS TOA NDVI",
+       legend=c("MODIS NBAR NDVI",
                 "GOES TOA NDVI",
                 "GOES median (local hours 10 - 14)", 
                 "GOES daily daytime mean",
@@ -310,115 +311,143 @@ legend('bottomright',
 
 #----------Plot NDII inside fire perimeter-----------
 par(mfrow = c(2, 1))
-ylims_out = c(min(kin_day$NDII_5, 
+ylims_out = c(min(c(kin_day$NDII_5, fires.modis$NDII), 
                   na.rm = T), 
-              max(kin_day$NDII_5, 
+              max(c(kin_day$NDII_5, fires.modis$NDII), 
                   na.rm = T)
 )
 
-plot(NDII_5 ~ stimestamp_ldt, 
+plot(NDII_5 ~ date_utc, 
      kin_day[inside_perim == T & NDII_5 > -1 & NDII_5 < 1], 
      xlab = '', 
-     ylab = 'TOA NDII',
+     ylab = 'NDII',
      ylim = ylims_out,
      pch = '',
      xaxt = 'n')
 
 #Add fire dates
-x = c(min(kin_day[inside_perim == T & doy == 296]$stimestamp_ldt), 
-      min(kin_day[inside_perim == T & doy == 310]$stimestamp_ldt), 
-      min(kin_day[inside_perim == T & doy == 310]$stimestamp_ldt), 
-      min(kin_day[inside_perim == T & doy == 296]$stimestamp_ldt))
+x = c(min(kin_day[inside_perim == T & doy == 296]$date_utc), 
+      min(kin_day[inside_perim == T & doy == 310]$date_utc), 
+      min(kin_day[inside_perim == T & doy == 310]$date_utc), 
+      min(kin_day[inside_perim == T & doy == 296]$date_utc))
 y = c(-2, -2, 2, 2)
 polygon(x, y, col = 'gray88', border = 'gray88')
 
 #Add NDII
-points(NDII_5 ~ stimestamp_ldt,
+points(NDII_5 ~ date_utc,
        kin_day[inside_perim == T],
-       pch = 20, cex = 0.5, col = 'gray50')
+       pch = 20, cex = 0.8, col = 'gray50')
+
+#Add modis NDVI
+points(NDII ~ date_utc,
+       fires.modis[date_utc >= min(kin_day[inside_perim == T]$date_utc) 
+                   & date_utc <= max(kin_day[inside_perim == T]$date_utc) 
+                   & Name == 'kincade_infire'],
+       pch = 20, cex = 0.8, col = 'red')
 
 #Add median noon NDII
-points(median_NDII5 ~ stimestamp_ldt,
+points(median_NDII5 ~ date_utc,
        in_mednoon_ndvi,
-       pch = 20, cex = 0.6, col = 'goldenrod2')
+       pch = 20, cex = 0.8, col = 'goldenrod2')
 
 #Add daily mean NDII
-points(mean_NDII5 ~ stimestamp_ldt,
+points(mean_NDII5 ~ date_utc,
        in_mean_ndvi,
-       cex = 0.5, col = 'purple')
+       cex = 0.8, col = 'purple')
 
 #Add x-axis
 date_seq = seq(
-  min(kin_day[inside_perim == T]$stimestamp_ldt), 
-  max(kin_day[inside_perim == T]$stimestamp_ldt), 
+  min(kin_day[inside_perim == T]$date_utc), 
+  max(kin_day[inside_perim == T]$date_utc), 
   by = 'week')
 
-axis.POSIXct(1, kin_day[inside_perim == T]$stimestamp_ldt, at = date_seq, format = '%m-%d', las = 3)
+axis.POSIXct(1, kin_day[inside_perim == T]$date_utc, 
+             at = date_seq, 
+             format = '%m-%d', 
+             las = 3)
 title ('Inside fire perimeter', col = 'gray')
 
 #Add legend
 legend('topright',
-       legend=c("GOES TOA NDII",
+       legend=c("MODIS NBAR NDII",
+                "GOES TOA NDII",
                 "GOES median (local hours 10 - 14)", 
                 "GOES daily daytime mean",
                 "Fire duration"),
-       pch = c(20, 20, 1, NA),
-       col=c("gray50", "goldenrod2", "purple", NA),
-       border = c(NA, NA, NA, NA),
-       fill = c(NA, NA, NA, 'gray'),
+       pch = c(20, 20, 20, 1, NA),
+       col=c("red", "gray50", "goldenrod2", "purple", NA),
+       border = c(NA, NA, NA, NA, NA),
+       fill = c(NA, NA, NA, NA, 'gray'),
        ncol=1, 
-       #xpd=NA, 
        bty="n")
 
 #---------Plot NDII outside of fire perimeter--------
-ylims_out = c(min(kin_day$NDII_5, 
+ylims_out = c(min(c(kin_day$NDII_5, fires.modis$NDII), 
                   na.rm = T), 
-              max(kin_day$NDII_5, 
+              max(c(kin_day$NDII_5, fires.modis$NDII), 
                   na.rm = T)
 )
-
-plot(NDII_5 ~ stimestamp_ldt, 
+plot(NDII_5 ~ date_utc, 
      kin_day[inside_perim == F & NDII_5 > -1 & NDII_5 < 1], 
      xlab = '', 
-     ylab = 'TOA NDII',
+     ylab = 'NDII',
      ylim = ylims_out,
      pch = '',
      xaxt = 'n')
 
-#Shade fire dates
-x = c(min(kin_day[inside_perim == F & doy == 296]$stimestamp_ldt), 
-      min(kin_day[inside_perim == F & doy == 310]$stimestamp_ldt), 
-      min(kin_day[inside_perim == F & doy == 310]$stimestamp_ldt), 
-      min(kin_day[inside_perim == F & doy == 296]$stimestamp_ldt))
+#Add fire dates
+x = c(min(kin_day[inside_perim == F & doy == 296]$date_utc), 
+      min(kin_day[inside_perim == F & doy == 310]$date_utc), 
+      min(kin_day[inside_perim == F & doy == 310]$date_utc), 
+      min(kin_day[inside_perim == F & doy == 296]$date_utc))
 y = c(-2, -2, 2, 2)
 polygon(x, y, col = 'gray88', border = 'gray88')
 
 #Add NDII
-points(NDII_5 ~ stimestamp_ldt,
+points(NDII_5 ~ date_utc,
        kin_day[inside_perim == F],
-       pch = 20, cex = 0.5, col = 'gray50')
+       pch = 20, cex = 0.8, col = 'gray50')
+
+#Add modis NDVI
+points(NDII ~ date_utc,
+       fires.modis[date_utc >= min(kin_day[inside_perim == F]$date_utc) 
+                   & date_utc <= max(kin_day[inside_perim == F]$date_utc) 
+                   & Name == 'kincade_outfire'],
+       pch = 20, cex = 0.8, col = 'red')
 
 #Add median noon NDII
-points(median_NDII5 ~ stimestamp_ldt,
+points(median_NDII5 ~ date_utc,
        out_mednoon_ndvi,
-       pch = 20, cex = 0.6, col = 'goldenrod2')
+       pch = 20, cex = 0.8, col = 'goldenrod2')
 
 #Add daily mean NDII
-points(mean_NDII5 ~ stimestamp_ldt,
+points(mean_NDII5 ~ date_utc,
        out_mean_ndvi,
-       #pch = 4, 
-       cex = 0.5, col = 'purple')
+       cex = 0.8, col = 'purple')
 
 #Add x-axis
 date_seq = seq(
-  min(kin_day[inside_perim == F]$stimestamp_ldt), 
-  max(kin_day[inside_perim == F]$stimestamp_ldt), 
+  min(kin_day[inside_perim == F]$date_utc), 
+  max(kin_day[inside_perim == F]$date_utc), 
   by = 'week')
 
-axis.POSIXct(1, 
-             kin_day[inside_perim == F]$stimestamp_ldt, 
+axis.POSIXct(1, kin_day[inside_perim == F]$date_utc, 
              at = date_seq, 
              format = '%m-%d', 
              las = 3)
 
 title ('Outside fire perimeter', col = 'gray')
+
+#Add legend
+legend('bottomright',
+       legend=c("MODIS NBAR NDII",
+                "GOES TOA NDII",
+                "GOES median (local hours 10 - 14)", 
+                "GOES daily daytime mean",
+                "Fire duration"),
+       pch = c(20, 20, 20, 1, NA),
+       col=c("red", "gray50", "goldenrod2", "purple", NA),
+       border = c(NA, NA, NA, NA, NA),
+       fill = c(NA, NA, NA, NA, 'gray'),
+       ncol=1, 
+       bty="n")
