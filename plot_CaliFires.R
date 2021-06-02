@@ -49,7 +49,7 @@ zenith_calc <- function  (LAT,LON,DOY,Hr){
 
 #--------------------------------------------------------------------------------------------- 
 #Read in data from goes
-fires <- fread('/Users/badgrs/data/fire/califires2019_goes_cmi2km_mar2019_march2020_cmask.csv')
+fires <- fread('califires2019_goes_cmi2km_mar2019_march2020_cmask.csv', stringsAsFactors = F)
 
 #convert stimestamp to utc POSIXct datatype
 fires$stimestamp_utc = as.POSIXct(fires$stimestamp, 
@@ -60,7 +60,7 @@ fires$stimestamp_utc = as.POSIXct(fires$stimestamp,
 fires$stimestamp_ldt = format(fires$stimestamp_utc, tz = 'US/Pacific')
 fires$stimestamp_ldt = as.POSIXct(fires$stimestamp_ldt, tz = 'US/Pacific')
 
-#Get date as just day to calculate stats by day
+#Get date to calculate stats by day
 fires$date_utc = as.POSIXct(date(fires$stimestamp_utc))
 fires$date_ldt = as.POSIXct(date(fires$stimestamp_ldt))
 
@@ -124,7 +124,7 @@ out_mednoon_ndvi = kin_day[inside_perim == F
 
 #Read in modis data at fire point
 #fires.modis <- fread('califires2019_modis_l1b1km_mar2019_march2020.csv') 
-fires.modis <- fread ('/Users/badgrs/data/fire/califires_modis_mcd43a4_2019_2020.csv', stringsAsFactors = F)
+fires.modis <- fread ('califires_modis_mcd43a4_2019_2020.csv', stringsAsFactors = F)
 
 #Get good quality fire entries 
 fires.modis = fires.modis[Name %in% c('kincade_infire', 'kincade_outfire') & b1_qf == 0 & b2_qf == 0 & b6_qf == 0]
